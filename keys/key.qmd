@@ -1,5 +1,5 @@
 ---
-title: 'ESM 244 Lab Week 6: Clustering (k-means & hierarchical)'
+title: 'ESM 244 Lab Week 9: Clustering (k-means & hierarchical)'
 format: 
   html:
     code-fold: show
