@@ -19,8 +19,6 @@ Note: You'll probably need to install the last 5 packages here for clustering.
 
 ```{r}
 library(tidyverse)
-library(janitor)
-library(palmerpenguins)
 
 # Packages for cluster analysis:
 library(NbClust)
@@ -33,28 +31,79 @@ library(ggdendro)
 
 # Part 1. K-means clustering: 
 
-To practice k-means clustering, we'll use the `penguins` dataset from `palmerpenguins`. 
+To practice k-means clustering, we'll use the [wheat seeds dataset](https://archive.ics.uci.edu/dataset/236/seeds) from UC Irvine's Machine Learning Repository.  This was featured in:
+
+* M. Charytanowicz, J. Niewczas, P. Kulczycki, Piotr A. Kowalski, Szymon Łukasik, Slawomir Zak. 2010 [Complete Gradient Clustering Algorithm for Features Analysis of X-Ray Images](https://www.semanticscholar.org/paper/Complete-Gradient-Clustering-Algorithm-for-Features-Charytanowicz-Niewczas/24a9453d3cab64995e32506f884c2a1792a6d4ca).  Information Technologies in Biomedicine.
+
+From the repository:
+
+> Measurements of geometrical properties of kernels belonging to three different varieties of wheat. A soft X-ray technique and GRAINS package were used to construct all seven, real-valued attributes.
+>
+> The examined group comprised kernels belonging to three different varieties of wheat: Kama, Rosa and Canadian, 70 elements each, randomly selected for the experiment. High quality visualization of the internal kernel structure was detected using a soft X-ray technique. It is non-destructive and considerably cheaper than other more sophisticated imaging techniques like scanning microscopy or laser technology. The images were recorded on 13x18 cm X-ray KODAK plates. Studies were conducted using combine harvested wheat grain originating from experimental fields, explored at the Institute of Agrophysics of the Polish Academy of Sciences in Lublin.
+> 
+> The data set can be used for the tasks of classification and cluster analysis.
+
+Variables:
+
+1. area A, 
+2. perimeter P, 
+3. compactness C = 4*pi*A/P^2, 
+4. length of kernel,
+5. width of kernel,
+6. asymmetry coefficient
+7. length of kernel groove.
+8. variety: Kama=1, Rosa=2, Canadian=3
+
+All of these parameters were real-valued continuous.
+
+Note: I've slightly modified the dataset to include some NA values...
+
+## Read in the data
+
+This data is in a different format than we are used to.  It is a text file, rather than csv; the columns are separated by tabs, not commas; and the columns are not named so we'll have to name them manually.
+
+```{r}
+var_names <- c('a', 'p', 'c', 'l_k', 'w_k', 'asym', 'l_g', 'variety')
+seeds_df <- read_tsv(here::here('data/seeds_dataset.txt'),
+                     col_names = FALSE,
+                     na = '-999') %>%
+  setNames(var_names) %>%
+  mutate(variety = case_when(variety == 1 ~ 'Kama',
+                             variety == 2 ~ 'Rosa',
+                             variety == 3 ~ 'Canadian',
+                             TRUE ~ 'oops'))
+
+### or names(seeds_df) <- var_names
+
+summary(seeds_df)
+```
+
 
 ## Exploratory visualization
 
-First, do some exploratory data visualization. Does it look like there are any obvious clusters? 
+Let's examine the distribution of the variables:
 
 ```{r}
-
-# Bill length versus depth exploratory plot:
-ggplot(penguins) +
-  geom_point(aes(x = bill_length_mm, 
-                 y = bill_depth_mm),
-             size = 3,
-             alpha = 0.7)
-
-# Flipper length versus body mass exploratory plot: 
-ggplot(penguins) +
-  geom_point(aes(x = flipper_length_mm, 
-                 y = body_mass_g),
-             size = 3,
-             alpha = 0.7)
+seeds_df_long <- seeds_df %>%
+  pivot_longer(cols = -variety)
+ggplot(seeds_df_long, aes(x = value)) +
+  geom_histogram() +
+  facet_grid(variety ~ name, scales = 'free')
 ```
+
+Then, do some exploratory data visualization. Does it look like there are any obvious clusters? 
+
+```{r}
+ggplot(seeds_df) +
+  geom_point(aes(x = a, y = asym, color = c, shape = variety),
+             size = 3, alpha = 0.7)
+
+# try other variations: 
+ggplot(seeds_df) +
+  geom_point(aes(x = l_g, y = w_k, color = asym, shape = variety),
+             size = 3, alpha = 0.7)
+```
+
 
 ## Pseudocode
 
@@ -77,44 +126,44 @@ Basically, it's going to run 30 different ways of evaluating how many clusters i
 
 ## Create a complete, scaled version of the data
 
-We are going to do this with *complete cases* - in other words, for the variables we're using to perform k-means clustering on penguins (bill length, bill depth, flipper length, body mass), we are *dropping any observation (row) where any of those are missing*. Keep in mind that this may not be the best option for every scenario - in other cases (e.g. when we have a large proportion of missingness), we may want to impute missing values instead.
+We are going to do this with *complete cases* - in other words, for the variables we're using to perform k-means clustering on, we are *dropping any observation (row) where any of those are missing*. Keep in mind that this may not be the best option for every scenario - in other cases (e.g. when we have a large proportion of missingness), we may want to impute missing values instead.
 
 ```{r}
-# Drop rows where any of the four size measurements are missing
-penguins_complete <- penguins %>% 
-  drop_na(bill_length_mm, bill_depth_mm, body_mass_g, flipper_length_mm)
+# Drop rows where any of the measurements are missing
+seeds_complete <- seeds_df %>% 
+  drop_na()
 
-# Only keep the columns for the four size measurements, then SCALE them
-penguins_scale <- penguins_complete %>% 
-  select(ends_with("mm"), body_mass_g) %>% 
+# Only keep the columns for the measurements, then SCALE them
+seeds_scale <- seeds_complete %>% 
+  select(-variety) %>% 
   scale() # See ?scale for details on scaling
 
 # compare scaled to original vars
-summary(penguins_complete)
-summary(penguins_scale)
+summary(seeds_complete)
+summary(seeds_scale)
 ```
 
-Make sure to check out what `penguins_scale` looks like!
+Make sure to check out what `seeds_scale` looks like!
 
 ## identifying optimal number of clusters
 
-Note that we're only using the four structural size measurement variables from `penguins`, which are columns 3 through 6 (hence the `penguins[3:6]` here). We also specify the minimum and maximum number of clusters we want `NbClust` to consider:
+Note that we're only using the seven measurement variables from the dataset. We also specify the minimum and maximum number of clusters we want `NbClust` to consider:
 
 ```{r}
 # How many clusters do you THINK there should be? 
-number_est <- NbClust(penguins_scale, min.nc = 2, max.nc = 10, method = "kmeans")
+number_est <- NbClust(seeds_scale, min.nc = 2, max.nc = 10, method = "kmeans")
 
 # Check out the results (just look at the first summary report):
 number_est
 
-# By these estimators, 3 is identified as the best number of clusters by the largest number of algorithms (11 / 24)...  could we override this?  here I think it makes sense to stick with 3 (a cluster for each species) and see how it does. 
+# By these estimators, 3 is identified as the best number of clusters by the largest number of algorithms (11 / 23)...  could we override this?  here I think it makes sense to stick with 3 (a cluster for each variety) and see how it does. 
 
 ### knee method
-fviz_nbclust(penguins_scale, FUNcluster = kmeans, method = 'wss', k.max = 10)
+fviz_nbclust(seeds_scale, FUNcluster = kmeans, method = 'wss', k.max = 10)
 
 ```
 
-We're going to use 3 clusters and see how it does, though there may be a case here for 2 given that Adelie & chinstrap penguins are pretty similar. 
+We're going to use 3 clusters and see how it does, though there may be a case here for 2 given that nearly as many of the indices indicated that as the best number. 
 
 
 ## Run k-means 
@@ -122,53 +171,47 @@ We're going to use 3 clusters and see how it does, though there may be a case he
 Now that we have complete, scaled data for the four size variables of interest, let's run k-means. You should know the iterative process it's running through from the Week 6 lecture.  
 
 ```{r}
-penguins_km <- kmeans(penguins_scale, 3, nstart = 25) # kmeans specifying 3 groups to start
+set.seed(10101)
+seeds_km <- kmeans(seeds_scale, 3, nstart = 25) # kmeans specifying 3 groups to start
 ```
 
-Check out the outputs in `penguins_km`: 
+Check out the outputs in `seeds_km`: 
 
 ```{r}
 # See what it returns (different elements returned by kmeans function):
-penguins_km$size # How many observations assigned to each cluster
-penguins_km$cluster # What cluster each observation in penguins_scale is assigned to
+seeds_km$size # How many observations assigned to each cluster
+seeds_km$cluster # What cluster each observation in seeds_scale is assigned to
 
-# Bind the cluster number to the original data used for clustering, so that we can see what cluster each penguin is assigned to
-penguins_cl <- data.frame(penguins_complete, 
-                          cluster_no = factor(penguins_km$cluster))
+# Bind the cluster number to the original data used for clustering, so that we can see what cluster each variety is assigned to
+seeds_cl <- data.frame(seeds_complete, 
+                       cluster_no = factor(seeds_km$cluster))
 
 ```
 
 ``` {r}
-# Plot flipper length versus body mass, indicating which cluster each penguin is assigned to (but also showing the actual species):
-ggplot(penguins_cl) +
-  geom_point(aes(x = flipper_length_mm, 
-                 y = body_mass_g, 
-                 color = cluster_no,
-                 shape = species))
+### On your own:
+### Plot area and asymmetric index, and include cluster number and variety for comparison:
 
-# On your own: do the same, plotting bill dimensions and mapping species & cluster number to the point shape and color aesthetics:
-
-# MAKE
-# YOUR 
-# GRAPH 
-# HERE
+ggplot(seeds_cl) +
+  geom_point(aes(x = a, y = asym, color = cluster_no, shape = variety), 
+             size = 2)
 
 ```
 
 What do we see from this graph? 
 
-We see that a lot of gentoos are in Cluster 3, a lot of Adelies are in Cluster 2, and A lot of chinstraps are in Cluster 1...but what are the actual counts? Let's find them: 
+We see that a lot of Kama variety (triangles) are in cluster 2 (green), Rosa (squares) in cluster 3 (blue), Canadian (circles) in cluster 1 (red)...  but what are the actual counts? Let's find them: 
 
 ```{r}
-### how well does this clustering match up to species?  Select the species and 
+### how well does this clustering match up to variety?  Select the variety and 
 ### cluster number vars and make into a continency table
-penguins_cl %>% select(species, cluster_no) %>% table()
+seeds_cl %>% select(variety, cluster_no) %>% table()
 
 ```
 
-Takeaway: as we see from the graph, *most* chinstraps in their own cluster, and *most* Adelies in a different cluster, and *all* Gentoos are in a distinct cluster by k-means clustering. So this actually does a somewhat decent job of splitting up the three species into different clusters, with some overlap in Cluster 1 between Adelies & chinstraps, which is consistent with what we observed in exploratory data visualization. 
+Takeaway: as we see from the graph, *most* wheat varieties in their own cluster k-means clustering. So this actually does a somewhat decent job of splitting up the three varieties into different clusters, with some overlap here and there, which is consistent with what we observed in exploratory data visualization. 
 
-That's your intro to k-means clustering with penguins! 
+That's your intro to k-means clustering with wheat seeds! 
 
 # Part 2. Cluster analysis: hierarchical
 
@@ -176,28 +219,32 @@ In this section, we'll be performing hierarchical cluster analysis (& making den
 
 We will use the `stats::hclust()` function for agglomerative hierarchical clustering, first checking how well our clusters compare to using WorldBank environmental data (simplified), wb_env.csv.
 
-## Compare hclust results to kmeans using penguins
+## Compare hclust results to kmeans using wheat seeds
 
 Start with complete linkage...  First step, create a Euclidean distance matrix
 ```{r}
-peng_dist <- dist(penguins_scale, method = 'euclidean') ### look at upper and diag arguments
+seeds_dist <- dist(seeds_scale, method = 'euclidean') ### look at upper and diag arguments
 
 # Hierarchical clustering (complete linkage)
-peng_hc_complete <- hclust(peng_dist, method = "complete")
+seeds_hc_complete <- hclust(seeds_dist, method = "complete")
 
 # Plot it (base plot):
-plot(peng_hc_complete, cex = 0.6, hang = -1)
+plot(seeds_hc_complete, cex = 0.6, hang = -1)
 ```
 
 ```{r}
 # use cutree to slice it into three clusters
-peng_cut_hc <- cutree(peng_hc_complete, 3)
-table(peng_cut_hc, penguins_complete$species)
+seeds_cut_hc <- cutree(seeds_hc_complete, 3)
+table(seeds_cut_hc, seeds_complete$variety)
 ```
 
 What if we tried single, average, or ward.D linkage?
 
 How is clustering in this way (either k-means or hierarchical) different from classification using something like binary logistic regression?
+
+* Classification sorts data into categories using a labeled dataset (supervised ML).  This can be used to create predictive models and/or see how predictor variables relate to the outcome variable.
+* Clustering sorts an unlabeled dataset into groups of similar observations (unsupervised ML).  There is no prediction target - the goal is to understand the underlying structure.  
+* Often, resulting clusters can have some physical interpretation (e.g., penguin species, wheat varieties) but not necessarily - however, the clusters can still provide useful information, e.g., taxonomy of voting patterns or environmental preferences.
 
 
 ## World Bank data: Read in the data, & simplify
@@ -212,11 +259,6 @@ wb_env <- read_csv(here::here("data/wb_env.csv"))
 # Make sure to take a look at the data:
 # View(wb_env)
 
-# Only keep top 20 greenhouse gas emitters (for simplifying visualization here...)
-wb_ghg_20 <- wb_env %>% 
-  slice_max(ghg, n = 20)
-
-summary(wb_ghg_20)
 ```
 
 ## Pseudocode
@@ -224,6 +266,15 @@ summary(wb_ghg_20)
 
 
 
+## Wrangle the data
+
+```{r}
+# Only keep top 20 greenhouse gas emitters (for simplifying visualization here...)
+wb_ghg_20 <- wb_env %>% 
+  slice_max(ghg, n = 20)
+
+summary(wb_ghg_20)
+```
 
 ## Scale the data
 
