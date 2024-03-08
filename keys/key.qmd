@@ -1,5 +1,5 @@
 ---
-title: 'ESM 244 Lab Week 6: Clustering (k-means & hierarchical)'
+title: 'ESM 244 Lab Week 9: Clustering (k-means & hierarchical)'
 format: 
   html:
     code-fold: show
@@ -219,6 +219,18 @@ seeds_cl %>% select(variety, cluster_no) %>% table()
 
 Takeaway: as we see from the graph, *most* wheat varieties in their own cluster k-means clustering. So this actually does a somewhat decent job of splitting up the three varieties into different clusters, with some overlap here and there, which is consistent with what we observed in exploratory data visualization. 
 
+## `fviz_cluster`
+
+Another option for vizualizing clusters.  You can choose variables to plot as the axes, and if you do not choose any, it defaults to running a PCA and plotting the first two principal components!  Additionally, it is a ggplot object so we can use all our ggplot theme tricks to make it look pretty.
+
+```{r}
+fviz_cluster(seeds_km, seeds_scale, choose.vars = c('a', 'asym')) +
+  theme_minimal()
+
+fviz_cluster(seeds_km, seeds_scale) +
+  theme_minimal()
+```
+
 That's your intro to k-means clustering with wheat seeds! 
 
 # Part 2. Cluster analysis: hierarchical
@@ -244,6 +256,18 @@ plot(seeds_hc_complete, cex = 0.6, hang = -1)
 # use cutree to slice it into three clusters
 seeds_cut_hc <- cutree(seeds_hc_complete, 3)
 table(seeds_cut_hc, seeds_complete$variety)
+```
+
+## Want to plot your dendrogram with ggplot instead? Me too. 
+
+Here's how you can make your dendrogram with `ggplot` (here, I'll use the complete linkage example stored as `hc_complete`) using `ggdendrogram()`, a `ggplot` wrapper: 
+
+```{r}
+ggdendrogram(seeds_hc_complete, 
+             rotate = TRUE) +
+  theme_minimal()
+
+# COOL. Then you can customize w/ usual ggplot tools. 
 ```
 
 What if we tried single, average, or ward.D linkage?
