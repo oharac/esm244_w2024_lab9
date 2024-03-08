@@ -178,9 +178,17 @@ seeds_km <- kmeans(seeds_scale, 3, nstart = 25) # kmeans specifying 3 groups to 
 Check out the outputs in `seeds_km`: 
 
 ```{r}
-# See what it returns (different elements returned by kmeans function):
-seeds_km$size # How many observations assigned to each cluster
-seeds_km$cluster # What cluster each observation in seeds_scale is assigned to
+### See what it returns (different elements returned by kmeans function):
+### How many observations assigned to each cluster:
+seeds_km$size ### if very unbalanced, plot things to see if that makes sense
+
+### What cluster each observation in seeds_scale is assigned to - we can
+### use this to plot observations by cluster
+seeds_km$cluster 
+
+### Where are the centroids for each cluster? this tells us something about the
+### characteristics of each cluster, relative to the input variables
+seeds_km$centers 
 
 # Bind the cluster number to the original data used for clustering, so that we can see what cluster each variety is assigned to
 seeds_cl <- data.frame(seeds_complete, 
